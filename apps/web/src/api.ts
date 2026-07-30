@@ -1,10 +1,23 @@
 export const API_BASE = import.meta.env.VITE_API_URL || ''
 
+export type DockerStatus = {
+  installed: boolean
+  running: boolean
+  gatewayContainer: boolean
+  image: string
+  composeFile: string
+}
+
+export type GatewayRuntime = 'native' | 'docker' | 'none'
+
 export type StatusResponse = {
   openclawHome: string
   envFile: string
   gatewayPort: number
   version: string | null
+  runtime: GatewayRuntime
+  docker: DockerStatus
+  defaultMode: string
   gateway: {
     healthy: boolean
     url: string
@@ -18,13 +31,23 @@ export type StatusResponse = {
   presets: Array<{ id: string; label: string; tier: string }>
 }
 
+export type EnsureGatewayResponse = {
+  ok: boolean
+  mode: string
+  runtime: GatewayRuntime
+  healthy: boolean
+  url: string
+  message: string
+  error?: string
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json', ...init?.headers },
     ...init,
   })
   const data = await res.json()
-  if (!res.ok) throw new Error(data.error || res.statusText)
+  if (!res.ok) throw new Error(data.error || data.message || res.statusText)
   return data as T
 }
 
@@ -41,8 +64,21 @@ export const api = {
       body: JSON.stringify({ action: 'generate' }),
     }),
   revealToken: () => request<{ token: string }>('/api/token/reveal', { method: 'POST' }),
-  startNative: () => request('/api/gateway/native/start', { method: 'POST' }),
+  ensureGateway: (mode: 'auto' | 'native' | 'docker' = 'auto') =>
+    request<EnsureGatewayResponse>('/api/gateway/ensure', {
+      method: 'POST',
+      body: JSON.stringify({ mode }),
+    }),
+  repair: () =>
+    request<{ output: string; gateway: EnsureGatewayResponse }>('/api/gateway/repair', {
+      method: 'POST',
+    }),
+  startNative: () =>
+    request<EnsureGatewayResponse>('/api/gateway/native/start', { method: 'POST' }),
   stopNative: () => request('/api/gateway/native/stop', { method: 'POST' }),
-  startDocker: () => request('/api/gateway/docker/start', { method: 'POST' }),
+  startDocker: () =>
+    request<EnsureGatewayResponse>('/api/gateway/docker/start', { method: 'POST' }),
   stopDocker: () => request('/api/gateway/docker/stop', { method: 'POST' }),
+  stopAll: () => request('/api/gateway/stop-all', { method: 'POST' }),
+  dockerLogs: (tail = 80) => request<{ logs: string }>(`/api/docker/logs?tail=${tail}`),
 }

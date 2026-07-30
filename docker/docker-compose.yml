@@ -1,0 +1,55 @@
+# OpenClaw gateway — canonical compose for OpenClaw Control
+# Docs: https://docs.openclaw.ai/install/docker
+#
+# Env vars (written to ~/.openclaw/docker/.env.compose by the API):
+#   OPENCLAW_STATE_DIR, OPENCLAW_ENV_FILE, OPENCLAW_GATEWAY_PORT,
+#   OPENCLAW_GATEWAY_TOKEN, OPENCLAW_IMAGE, OLLAMA_API_KEY
+
+services:
+  openclaw-gateway:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
+    container_name: openclaw-gateway
+    restart: unless-stopped
+    ports:
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+    env_file:
+      - ${OPENCLAW_ENV_FILE}
+    environment:
+      OPENCLAW_GATEWAY_PORT: "18789"
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-ollama-local}
+      OLLAMA_HOST: http://host.docker.internal:11434
+    volumes:
+      - ${OPENCLAW_STATE_DIR}:/home/node/.openclaw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - node
+      - dist/index.js
+      - gateway
+      - run
+      - --bind
+      - lan
+      - --port
+      - "18789"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:18789/healthz || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  openclaw-cli:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/openclaw/openclaw:latest}
+    profiles: ["cli"]
+    env_file:
+      - ${OPENCLAW_ENV_FILE}
+    environment:
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      OLLAMA_HOST: http://host.docker.internal:11434
+    volumes:
+      - ${OPENCLAW_STATE_DIR}:/home/node/.openclaw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    entrypoint: ["node", "dist/index.js"]
+    network_mode: "service:openclaw-gateway"

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, type StatusResponse } from './api'
 
-function Badge({ ok, label }: { ok: boolean; label: string }) {
-  return <span className={`badge ${ok ? 'ok' : 'off'}`}>{label}</span>
+function Badge({ ok, label, variant }: { ok: boolean; label: string; variant?: 'warn' }) {
+  const cls = variant === 'warn' ? 'warn' : ok ? 'ok' : 'off'
+  return <span className={`badge ${cls}`}>{label}</span>
 }
 
 export function App() {
@@ -10,10 +11,11 @@ export function App() {
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null)
+  const [logs, setLogs] = useState<string | null>(null)
 
   const showToast = (message: string, error = false) => {
     setToast({ message, error })
-    setTimeout(() => setToast(null), 4000)
+    setTimeout(() => setToast(null), 5000)
   }
 
   const refresh = useCallback(async () => {
@@ -29,15 +31,23 @@ export function App() {
 
   useEffect(() => {
     refresh()
-    const id = setInterval(refresh, 15_000)
+    const id = setInterval(refresh, 10_000)
     return () => clearInterval(id)
   }, [refresh])
 
-  const runAction = async (key: string, fn: () => Promise<unknown>, successMsg: string) => {
+  const runAction = async (
+    key: string,
+    fn: () => Promise<{ message?: string } | unknown>,
+    fallbackMsg: string
+  ) => {
     setBusy(key)
     try {
-      await fn()
-      showToast(successMsg)
+      const result = await fn()
+      const msg =
+        result && typeof result === 'object' && 'message' in result && result.message
+          ? String(result.message)
+          : fallbackMsg
+      showToast(msg)
       await refresh()
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Action failed', true)
@@ -56,6 +66,7 @@ export function App() {
   }
 
   const gatewayHealthy = status?.gateway.healthy ?? false
+  const runtime = status?.runtime ?? 'none'
 
   return (
     <div className='app-shell'>
@@ -64,7 +75,10 @@ export function App() {
           <h1>
             Open<span>Claw</span> Control
           </h1>
-          <p>Local dashboard for gateway, Docker, models, and keys — wraps your OpenClaw CLI.</p>
+          <p>
+            Production local orchestrator — auto-starts Docker when needed, manages gateway, models,
+            and keys.
+          </p>
         </div>
         <div className='actions'>
           <button
@@ -77,11 +91,61 @@ export function App() {
           </button>
           {status?.gateway.url && (
             <a className='link-btn' href={status.gateway.url} target='_blank' rel='noreferrer'>
-              Open Gateway UI ↗
+              Gateway UI ↗
             </a>
           )}
         </div>
       </header>
+
+      <section className='card highlight-card'>
+        <div className='highlight-row'>
+          <div>
+            <h2 className='inline-title'>System Status</h2>
+            <p className='muted'>
+              Runtime: <strong>{runtime}</strong> · Mode default: {status?.defaultMode ?? 'auto'}
+            </p>
+          </div>
+          <div className='actions'>
+            <Badge
+              ok={gatewayHealthy}
+              label={gatewayHealthy ? 'Gateway Live' : 'Gateway Offline'}
+            />
+            <Badge
+              ok={!!status?.docker.running}
+              label={status?.docker.running ? 'Docker Ready' : 'Docker Down'}
+              variant={status?.docker.running ? undefined : 'warn'}
+            />
+          </div>
+        </div>
+        <div className='actions'>
+          <button
+            type='button'
+            className='btn btn-primary btn-lg'
+            disabled={!!busy}
+            onClick={() =>
+              runAction('ensure', () => api.ensureGateway('auto'), 'Gateway orchestration complete')
+            }
+          >
+            {busy === 'ensure' ? 'Starting…' : 'Smart Start (Auto)'}
+          </button>
+          <button
+            type='button'
+            className='btn btn-secondary'
+            disabled={!!busy}
+            onClick={() => runAction('repair', api.repair, 'Repair complete')}
+          >
+            {busy === 'repair' ? 'Repairing…' : 'Doctor + Restart'}
+          </button>
+          <button
+            type='button'
+            className='btn btn-ghost'
+            disabled={!!busy}
+            onClick={() => runAction('stop-all', api.stopAll, 'All gateways stopped')}
+          >
+            Stop All
+          </button>
+        </div>
+      </section>
 
       <div className='grid'>
         <section className='card'>
@@ -91,50 +155,88 @@ export function App() {
             <Badge ok={gatewayHealthy} label={gatewayHealthy ? 'Healthy' : 'Offline'} />
           </div>
           <div className='stat-row'>
+            <span className='stat-label'>Runtime</span>
+            <span className='stat-value'>{runtime}</span>
+          </div>
+          <div className='stat-row'>
             <span className='stat-label'>Port</span>
             <span className='stat-value'>{status?.gatewayPort ?? '—'}</span>
           </div>
           <div className='stat-row'>
-            <span className='stat-label'>Docker</span>
-            <Badge
-              ok={!!status?.gateway.dockerRunning}
-              label={status?.gateway.dockerRunning ? 'Running' : 'Stopped'}
-            />
-          </div>
-          <div className='stat-row'>
-            <span className='stat-label'>Version</span>
+            <span className='stat-label'>OpenClaw</span>
             <span className='stat-value'>{status?.version ?? '—'}</span>
           </div>
           <div className='actions'>
             <button
               type='button'
-              className='btn btn-primary'
+              className='btn btn-secondary'
               disabled={!!busy}
-              onClick={() => runAction('native-start', api.startNative, 'Native gateway started')}
+              onClick={() => runAction('native', () => api.startNative(), 'Native gateway')}
             >
-              {busy === 'native-start' ? 'Starting…' : 'Start Native'}
+              Native
             </button>
             <button
               type='button'
-              className='btn btn-secondary'
+              className='btn btn-primary'
               disabled={!!busy}
-              onClick={() => runAction('docker-start', api.startDocker, 'Docker gateway started')}
+              onClick={() => runAction('docker', () => api.startDocker(), 'Docker gateway')}
             >
-              {busy === 'docker-start' ? 'Starting…' : 'Start Docker'}
+              {busy === 'docker' ? 'Opening Docker…' : 'Docker'}
+            </button>
+          </div>
+        </section>
+
+        <section className='card'>
+          <h2>Docker Engine</h2>
+          <div className='stat-row'>
+            <span className='stat-label'>Installed</span>
+            <Badge
+              ok={!!status?.docker.installed}
+              label={status?.docker.installed ? 'Yes' : 'No'}
+            />
+          </div>
+          <div className='stat-row'>
+            <span className='stat-label'>Daemon</span>
+            <Badge
+              ok={!!status?.docker.running}
+              label={status?.docker.running ? 'Running' : 'Stopped'}
+            />
+          </div>
+          <div className='stat-row'>
+            <span className='stat-label'>Container</span>
+            <Badge
+              ok={!!status?.docker.gatewayContainer}
+              label={status?.docker.gatewayContainer ? 'openclaw-gateway' : 'None'}
+            />
+          </div>
+          <div className='stat-row'>
+            <span className='stat-label'>Image</span>
+            <span className='stat-value stat-wrap'>{status?.docker.image ?? '—'}</span>
+          </div>
+          <div className='actions'>
+            <button
+              type='button'
+              className='btn btn-ghost'
+              disabled={!!busy}
+              onClick={async () => {
+                setBusy('logs')
+                try {
+                  const { logs: text } = await api.dockerLogs(100)
+                  setLogs(text)
+                } catch (err) {
+                  showToast(err instanceof Error ? err.message : 'Failed to load logs', true)
+                } finally {
+                  setBusy(null)
+                }
+              }}
+            >
+              View Logs
             </button>
             <button
               type='button'
               className='btn btn-danger'
               disabled={!!busy}
-              onClick={() => runAction('stop', api.stopNative, 'Native gateway stopped')}
-            >
-              Stop Native
-            </button>
-            <button
-              type='button'
-              className='btn btn-ghost'
-              disabled={!!busy}
-              onClick={() => runAction('docker-stop', api.stopDocker, 'Docker gateway stopped')}
+              onClick={() => runAction('docker-stop', api.stopDocker, 'Docker stopped')}
             >
               Stop Docker
             </button>
@@ -152,9 +254,7 @@ export function App() {
               type='button'
               className='btn btn-secondary'
               disabled={!!busy}
-              onClick={() =>
-                runAction('token-gen', api.generateToken, 'New gateway token generated')
-              }
+              onClick={() => runAction('token', api.generateToken, 'Token generated')}
             >
               Generate
             </button>
@@ -163,11 +263,11 @@ export function App() {
               className='btn btn-ghost'
               disabled={!!busy}
               onClick={async () => {
-                setBusy('token-copy')
+                setBusy('copy')
                 try {
                   const { token } = await api.revealToken()
                   await navigator.clipboard.writeText(token)
-                  showToast('Token copied to clipboard')
+                  showToast('Token copied')
                 } catch (err) {
                   showToast(err instanceof Error ? err.message : 'Copy failed', true)
                 } finally {
@@ -175,34 +275,27 @@ export function App() {
                 }
               }}
             >
-              Copy full token
+              Copy
             </button>
           </div>
-          <p style={{ margin: '1rem 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
-            Paste into the OpenClaw Control UI at Settings when connecting locally.
-          </p>
-        </section>
-
-        <section className='card'>
-          <h2>API Keys</h2>
-          <div className='keys-grid'>
-            {status?.keys.map((key) => (
-              <div key={key.env} className={`key-pill ${key.set ? 'set' : 'unset'}`}>
-                <span>{key.label}</span>
-                <span>{key.set ? '✓' : '—'}</span>
-              </div>
-            ))}
-          </div>
-          <p style={{ margin: '1rem 0 0', color: 'var(--muted)', fontSize: '0.85rem' }}>
-            Edit <code>{status?.envFile}</code> or use the shell launcher to apply keys via{' '}
-            <code>openclaw onboard</code>.
-          </p>
         </section>
       </div>
 
       <section className='card'>
+        <h2>API Keys</h2>
+        <div className='keys-grid'>
+          {status?.keys.map((key) => (
+            <div key={key.env} className={`key-pill ${key.set ? 'set' : 'unset'}`}>
+              <span>{key.label}</span>
+              <span>{key.set ? '✓' : '—'}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className='card'>
         <h2>Model Selection</h2>
-        <p style={{ margin: '0 0 1rem', color: 'var(--muted)', fontSize: '0.92rem' }}>
+        <p className='muted mb'>
           Current: <span className='stat-value'>{status?.primaryModel ?? 'Not set'}</span>
         </p>
         <div className='model-grid'>
@@ -214,9 +307,9 @@ export function App() {
               disabled={!!busy}
               onClick={() =>
                 runAction(
-                  `model-${preset.id}`,
+                  preset.id,
                   () => api.setModel(preset.id, preset.tier === 'local'),
-                  `Model set to ${preset.label}`
+                  `Model → ${preset.label}`
                 )
               }
             >
@@ -232,6 +325,18 @@ export function App() {
           ))}
         </div>
       </section>
+
+      {logs && (
+        <section className='card logs-card'>
+          <div className='highlight-row'>
+            <h2 className='inline-title'>Docker Logs</h2>
+            <button type='button' className='btn btn-ghost' onClick={() => setLogs(null)}>
+              Close
+            </button>
+          </div>
+          <pre className='log-output'>{logs}</pre>
+        </section>
+      )}
 
       {toast && <div className={`toast ${toast.error ? 'error' : ''}`}>{toast.message}</div>}
     </div>

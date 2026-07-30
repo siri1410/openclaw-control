@@ -2,12 +2,15 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import {
   API_PORT,
+  BOOTSTRAP_GATEWAY,
+  DEFAULT_GATEWAY_MODE,
   DOCKER_COMPOSE,
   ENV_FILE,
   GATEWAY_PORT,
   MODEL_PRESETS,
   OPENCLAW_HOME,
 } from './config'
+import { getDockerLogs, getDockerStatus, stopDockerGateway } from './docker'
 import {
   generateToken,
   keyStatus,
@@ -18,15 +21,19 @@ import {
   resolveGatewayToken,
 } from './env'
 import {
-  dockerCompose,
-  dockerGatewayRunning,
+  detectRuntime,
+  ensureGateway,
+  type GatewayMode,
+  repairOpenclaw,
+  stopAllGateways,
+} from './gateway'
+import {
   gatewayHealth,
   getGatewayStatus,
   listOllamaModels,
   openclawVersion,
   pullOllamaModel,
   setPrimaryModel,
-  startNativeGateway,
   stopNativeGateway,
 } from './openclaw'
 
@@ -40,14 +47,17 @@ app.use(
   })
 )
 
-app.get('/api/health', (c) => c.json({ ok: true, service: 'openclaw-control-api' }))
+app.get('/api/health', (c) =>
+  c.json({ ok: true, service: 'openclaw-control-api', version: '1.1.0' })
+)
 
 app.get('/api/status', async (c) => {
-  const [health, dockerRunning, version, ollamaModels] = await Promise.all([
+  const [health, docker, version, ollamaModels, runtime] = await Promise.all([
     gatewayHealth(),
-    dockerGatewayRunning(),
+    getDockerStatus(),
     openclawVersion(),
     listOllamaModels(),
+    detectRuntime(),
   ])
 
   const token = resolveGatewayToken()
@@ -59,9 +69,11 @@ app.get('/api/status', async (c) => {
     gatewayPort: GATEWAY_PORT,
     apiPort: API_PORT,
     version,
+    runtime,
+    docker,
     gateway: {
       ...health,
-      dockerRunning,
+      dockerRunning: docker.gatewayContainer,
       statusText: await getGatewayStatus(),
     },
     token: token ? { masked: maskToken(token), length: token.length } : null,
@@ -69,7 +81,28 @@ app.get('/api/status', async (c) => {
     keys: keyStatus(),
     ollamaModels,
     presets: MODEL_PRESETS,
+    defaultMode: DEFAULT_GATEWAY_MODE,
   })
+})
+
+app.get('/api/docker/status', async (c) => c.json(await getDockerStatus()))
+
+app.get('/api/docker/logs', async (c) => {
+  const tail = Number(c.req.query('tail') || 80)
+  return c.json({ logs: await getDockerLogs(tail) })
+})
+
+app.post('/api/gateway/ensure', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { mode?: GatewayMode }
+  const mode = body.mode || DEFAULT_GATEWAY_MODE
+  const result = await ensureGateway(mode)
+  return c.json(result, result.ok ? 200 : 502)
+})
+
+app.post('/api/gateway/repair', async (c) => {
+  const output = await repairOpenclaw()
+  const result = await ensureGateway('auto')
+  return c.json({ output, gateway: result })
 })
 
 app.get('/api/models/presets', (c) => c.json({ presets: MODEL_PRESETS }))
@@ -147,23 +180,18 @@ app.put('/api/keys', async (c) => {
 
   const updates: Record<string, string> = {}
   for (const [key, value] of Object.entries(body)) {
-    if (allowed.has(key) && typeof value === 'string') {
-      updates[key] = value
-    }
+    if (allowed.has(key) && typeof value === 'string') updates[key] = value
   }
 
-  const merged = mergeEnvFile(updates)
-  if (updates.OPENCLAW_GATEWAY_TOKEN) {
-    persistGatewayToken(updates.OPENCLAW_GATEWAY_TOKEN)
-  }
+  mergeEnvFile(updates)
+  if (updates.OPENCLAW_GATEWAY_TOKEN) persistGatewayToken(updates.OPENCLAW_GATEWAY_TOKEN)
 
   return c.json({ ok: true, keys: keyStatus(), saved: Object.keys(updates) })
 })
 
 app.post('/api/gateway/native/start', async (c) => {
-  const result = await startNativeGateway()
-  const health = await gatewayHealth()
-  return c.json({ ok: result.ok, health, output: result.stdout, error: result.stderr || null })
+  const result = await ensureGateway('native')
+  return c.json(result, result.ok ? 200 : 502)
 })
 
 app.post('/api/gateway/native/stop', async (c) => {
@@ -172,26 +200,31 @@ app.post('/api/gateway/native/stop', async (c) => {
 })
 
 app.post('/api/gateway/docker/start', async (c) => {
-  const token = resolveGatewayToken() || generateToken()
-  persistGatewayToken(token)
-  await dockerCompose(['pull', 'openclaw-gateway'])
-  const result = await dockerCompose(['up', '-d', 'openclaw-gateway'])
-  const health = await gatewayHealth()
-  return c.json({ ok: result.ok, health, output: result.stdout, error: result.stderr || null })
+  const result = await ensureGateway('docker')
+  return c.json(result, result.ok ? 200 : 502)
 })
 
 app.post('/api/gateway/docker/stop', async (c) => {
-  const result = await dockerCompose(['down'])
+  const result = await stopDockerGateway()
   return c.json({ ok: result.ok, output: result.stdout, error: result.stderr || null })
+})
+
+app.post('/api/gateway/stop-all', async (c) => {
+  const result = await stopAllGateways()
+  return c.json({ ok: true, ...result })
 })
 
 const port = API_PORT
 
-console.log(`OpenClaw Control API → http://127.0.0.1:${port}`)
+console.log(`OpenClaw Control API v1.1 → http://127.0.0.1:${port}`)
 
-Bun.serve({
-  fetch: app.fetch,
-  port,
-})
+if (BOOTSTRAP_GATEWAY) {
+  console.log(`Bootstrapping gateway (mode=${DEFAULT_GATEWAY_MODE})…`)
+  ensureGateway(DEFAULT_GATEWAY_MODE).then((r) => {
+    console.log(`Gateway bootstrap: ${r.message} (healthy=${r.healthy}, runtime=${r.runtime})`)
+  })
+}
+
+Bun.serve({ fetch: app.fetch, port })
 
 export { app }

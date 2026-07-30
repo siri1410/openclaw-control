@@ -7,11 +7,23 @@ export const ENV_FILE = process.env.OPENCLAW_ENV_FILE?.trim() || join(OPENCLAW_H
 
 export const CONFIG_FILE = join(OPENCLAW_HOME, 'openclaw.json')
 
-export const DOCKER_COMPOSE = join(OPENCLAW_HOME, 'docker', 'docker-compose.yml')
+export const DOCKER_COMPOSE_DIR =
+  process.env.OPENCLAW_DOCKER_DIR?.trim() || join(OPENCLAW_HOME, 'docker')
+
+export const DOCKER_COMPOSE = join(DOCKER_COMPOSE_DIR, 'docker-compose.yml')
+
+export const DOCKER_ENV_FILE = join(DOCKER_COMPOSE_DIR, '.env.compose')
 
 export const API_PORT = Number(process.env.API_PORT || 8787)
 
 export const GATEWAY_PORT = Number(process.env.OPENCLAW_GATEWAY_PORT || 18789)
+
+export const DEFAULT_GATEWAY_MODE = (process.env.OPENCLAW_GATEWAY_MODE || 'auto') as
+  | 'auto'
+  | 'native'
+  | 'docker'
+
+export const BOOTSTRAP_GATEWAY = process.env.OPENCLAW_BOOTSTRAP_GATEWAY === '1'
 
 export const MODEL_PRESETS = [
   { id: 'openai/gpt-5.5', label: 'GPT-5.5 Codex', tier: 'cloud' },

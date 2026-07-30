@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { DOCKER_COMPOSE, GATEWAY_PORT, OPENCLAW_HOME } from './config'
+import { DOCKER_COMPOSE, DOCKER_COMPOSE_DIR, GATEWAY_PORT } from './config'
+import { resolveOpenclawEnv } from './docker'
 
 export type CommandResult = {
   ok: boolean
@@ -9,10 +10,11 @@ export type CommandResult = {
   stderr: string
 }
 
-function run(
+export function runCommand(
   command: string,
   args: string[],
-  options: { cwd?: string; env?: NodeJS.ProcessEnv; timeoutMs?: number } = {}
+  timeoutMs = 120_000,
+  options: { cwd?: string; env?: NodeJS.ProcessEnv } = {}
 ): Promise<CommandResult> {
   return new Promise((resolve) => {
     const child = spawn(command, args, {
@@ -30,34 +32,22 @@ function run(
       stderr += chunk.toString()
     })
 
-    const timer = options.timeoutMs
-      ? setTimeout(() => {
-          child.kill('SIGTERM')
-        }, options.timeoutMs)
-      : null
+    const timer = setTimeout(() => child.kill('SIGTERM'), timeoutMs)
 
     child.on('close', (code) => {
-      if (timer) clearTimeout(timer)
-      resolve({
-        ok: code === 0,
-        code,
-        stdout: stdout.trim(),
-        stderr: stderr.trim(),
-      })
+      clearTimeout(timer)
+      resolve({ ok: code === 0, code, stdout: stdout.trim(), stderr: stderr.trim() })
     })
 
     child.on('error', (err) => {
-      if (timer) clearTimeout(timer)
+      clearTimeout(timer)
       resolve({ ok: false, code: null, stdout: '', stderr: err.message })
     })
   })
 }
 
 export async function runOpenclaw(args: string[], timeoutMs = 120_000): Promise<CommandResult> {
-  return run('openclaw', args, {
-    env: { OPENCLAW_STATE_DIR: OPENCLAW_HOME },
-    timeoutMs,
-  })
+  return runCommand('openclaw', args, timeoutMs, { env: resolveOpenclawEnv() })
 }
 
 export async function gatewayHealth(): Promise<{ healthy: boolean; url: string }> {
@@ -77,10 +67,7 @@ export async function getGatewayStatus(): Promise<string> {
 
 export async function startNativeGateway(): Promise<CommandResult> {
   await runOpenclaw(['doctor', '--repair'], 60_000)
-  const install = await runOpenclaw(['gateway', 'install'], 30_000)
-  if (!install.ok) {
-    return runOpenclaw(['gateway', 'start'], 30_000)
-  }
+  await runOpenclaw(['gateway', 'install', '--force'], 30_000)
   return runOpenclaw(['gateway', 'start'], 30_000)
 }
 
@@ -93,7 +80,7 @@ export async function setPrimaryModel(modelId: string): Promise<CommandResult> {
 }
 
 export async function listOllamaModels(): Promise<string[]> {
-  const result = await run('ollama', ['list'], { timeoutMs: 10_000 })
+  const result = await runCommand('ollama', ['list'], 10_000)
   if (!result.ok) return []
   return result.stdout
     .split('\n')
@@ -103,22 +90,11 @@ export async function listOllamaModels(): Promise<string[]> {
 }
 
 export async function pullOllamaModel(tag: string): Promise<CommandResult> {
-  return run('ollama', ['pull', tag], 600_000)
-}
-
-export async function dockerCompose(args: string[]): Promise<CommandResult> {
-  if (!existsSync(DOCKER_COMPOSE)) {
-    return { ok: false, code: 1, stdout: '', stderr: 'docker-compose.yml not found' }
-  }
-  return run(
-    'docker',
-    ['compose', '-f', DOCKER_COMPOSE, '--project-directory', `${OPENCLAW_HOME}/docker`, ...args],
-    { timeoutMs: 120_000 }
-  )
+  return runCommand('ollama', ['pull', tag], 600_000)
 }
 
 export async function dockerGatewayRunning(): Promise<boolean> {
-  const result = await run('docker', ['ps', '--format', '{{.Names}}'], { timeoutMs: 10_000 })
+  const result = await runCommand('docker', ['ps', '--format', '{{.Names}}'], 10_000)
   return result.stdout.split('\n').some((name) => name.includes('openclaw-gateway'))
 }
 
@@ -126,3 +102,9 @@ export async function openclawVersion(): Promise<string | null> {
   const result = await runOpenclaw(['--version'], 10_000)
   return result.stdout.split('\n')[0]?.trim() || null
 }
+
+export function composeFileExists(): boolean {
+  return existsSync(DOCKER_COMPOSE)
+}
+
+export { DOCKER_COMPOSE_DIR }

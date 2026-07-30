@@ -307,8 +307,65 @@ button:disabled {
   text-decoration: underline;
 }
 
-@media (max-width: 640px) {
-  .app-shell {
-    padding: 1.25rem 1rem 2rem;
-  }
+.highlight-card {
+  margin-bottom: 1rem;
+  border-color: rgba(0, 212, 170, 0.35);
+  background:
+    linear-gradient(135deg, rgba(0, 212, 170, 0.08), rgba(255, 107, 53, 0.05)), var(--bg-card);
+}
+
+.highlight-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.inline-title {
+  margin: 0;
+  font-size: 1.1rem;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.muted.mb {
+  margin: 0 0 1rem;
+}
+
+.btn-lg {
+  padding: 0.8rem 1.25rem;
+  font-size: 1rem;
+}
+
+.stat-wrap {
+  word-break: break-all;
+  max-width: 12rem;
+  text-align: right;
+}
+
+.logs-card {
+  margin-top: 1rem;
+}
+
+.log-output {
+  margin: 0;
+  padding: 1rem;
+  border-radius: 10px;
+  background: #0d1117;
+  border: 1px solid var(--border);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  max-height: 320px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
