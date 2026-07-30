@@ -10,14 +10,24 @@ export type DockerStatus = {
 
 export type GatewayRuntime = 'native' | 'docker' | 'none'
 
+export type OpenClawUpdateStatus = {
+  currentVersion: string | null
+  latestVersion: string | null
+  updateAvailable: boolean
+  channel: string | null
+  installKind: string | null
+}
+
 export type StatusResponse = {
   openclawHome: string
   envFile: string
   gatewayPort: number
+  controlVersion: string
   version: string | null
   runtime: GatewayRuntime
   docker: DockerStatus
   defaultMode: string
+  update: OpenClawUpdateStatus
   gateway: {
     healthy: boolean
     url: string
@@ -68,6 +78,15 @@ export const api = {
     }),
   revealToken: () => request<{ token: string }>('/api/token/reveal', { method: 'POST' }),
   dashboardUrl: () => request<{ url: string }>('/api/dashboard-url'),
+  copyDashboardUrl: () =>
+    request<{ url: string; cli: string }>('/api/dashboard/copy', { method: 'POST' }),
+  updateOpenClaw: () =>
+    request<{ ok: boolean; output: string; update: OpenClawUpdateStatus }>('/api/openclaw/update', {
+      method: 'POST',
+      body: JSON.stringify({ restart: true }),
+    }),
+  repairOpenClawUpdate: () =>
+    request<{ ok: boolean; output: string }>('/api/openclaw/repair-update', { method: 'POST' }),
   ensureGateway: (mode: 'auto' | 'native' | 'docker' = 'auto') =>
     request<EnsureGatewayResponse>('/api/gateway/ensure', {
       method: 'POST',

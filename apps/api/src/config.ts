@@ -16,6 +16,8 @@ export const DOCKER_ENV_FILE = join(DOCKER_COMPOSE_DIR, '.env.compose')
 
 export const API_PORT = Number(process.env.API_PORT || 8787)
 
+export const APP_VERSION = '1.2.0'
+
 export const GATEWAY_PORT = Number(process.env.OPENCLAW_GATEWAY_PORT || 18789)
 
 export const GATEWAY_BASE_URL = `http://127.0.0.1:${GATEWAY_PORT}/`

@@ -2,6 +2,7 @@ import { Hono } from 'hono'
 import { cors } from 'hono/cors'
 import {
   API_PORT,
+  APP_VERSION,
   BOOTSTRAP_GATEWAY,
   buildDashboardUrl,
   DEFAULT_GATEWAY_MODE,
@@ -30,13 +31,17 @@ import {
   stopAllGateways,
 } from './gateway'
 import {
+  copyAuthenticatedDashboardUrl,
   gatewayHealth,
   getGatewayStatus,
+  getOpenClawUpdateStatus,
   listOllamaModels,
   openclawVersion,
   pullOllamaModel,
+  repairOpenClawUpdate,
   setPrimaryModel,
   stopNativeGateway,
+  updateOpenClaw,
 } from './openclaw'
 
 const app = new Hono()
@@ -50,16 +55,17 @@ app.use(
 )
 
 app.get('/api/health', (c) =>
-  c.json({ ok: true, service: 'openclaw-control-api', version: '1.1.0' })
+  c.json({ ok: true, service: 'openclaw-control-api', version: APP_VERSION })
 )
 
 app.get('/api/status', async (c) => {
-  const [health, docker, version, ollamaModels, runtime] = await Promise.all([
+  const [health, docker, version, ollamaModels, runtime, updateStatus] = await Promise.all([
     gatewayHealth(),
     getDockerStatus(),
     openclawVersion(),
     listOllamaModels(),
     detectRuntime(),
+    getOpenClawUpdateStatus(),
   ])
 
   const token = ensureGatewayToken()
@@ -70,9 +76,11 @@ app.get('/api/status', async (c) => {
     dockerCompose: DOCKER_COMPOSE,
     gatewayPort: GATEWAY_PORT,
     apiPort: API_PORT,
+    controlVersion: APP_VERSION,
     version,
     runtime,
     docker,
+    update: updateStatus,
     gateway: {
       ...health,
       dockerRunning: docker.gatewayContainer,
@@ -132,6 +140,46 @@ app.post('/api/models/set', async (c) => {
   }
 
   return c.json({ ok: true, modelId, output: result.stdout })
+})
+
+app.get('/api/openclaw/update-status', async (c) => {
+  const status = await getOpenClawUpdateStatus()
+  return c.json(status)
+})
+
+app.post('/api/openclaw/update', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { restart?: boolean }
+  const result = await updateOpenClaw({ restart: body.restart !== false })
+  const gateway = result.ok ? await ensureGateway('auto') : null
+  return c.json(
+    {
+      ok: result.ok,
+      output: result.stdout || result.stderr,
+      gateway,
+      update: await getOpenClawUpdateStatus(),
+    },
+    result.ok ? 200 : 502
+  )
+})
+
+app.post('/api/openclaw/repair-update', async (c) => {
+  const result = await repairOpenClawUpdate()
+  const gateway = result.ok ? await ensureGateway('auto') : null
+  return c.json({
+    ok: result.ok,
+    output: result.stdout || result.stderr,
+    gateway,
+  })
+})
+
+app.post('/api/dashboard/copy', async (c) => {
+  const token = ensureGatewayToken()
+  const cli = await copyAuthenticatedDashboardUrl()
+  return c.json({
+    ok: true,
+    url: buildDashboardUrl(token),
+    cli: cli.stdout || cli.stderr || 'Dashboard URL copied to clipboard',
+  })
 })
 
 app.get('/api/dashboard-url', (c) => {
@@ -226,18 +274,29 @@ app.post('/api/gateway/stop-all', async (c) => {
 
 const port = API_PORT
 
-console.log(`OpenClaw Control API v1.2 → http://127.0.0.1:${port}`)
+console.log(`OpenClaw Control API v${APP_VERSION} → http://127.0.0.1:${port}`)
 
 ensureGatewayToken()
 
 if (BOOTSTRAP_GATEWAY) {
   console.log(`Bootstrapping gateway (mode=${DEFAULT_GATEWAY_MODE})…`)
-  ensureGateway(DEFAULT_GATEWAY_MODE).then((r) => {
-    console.log(`Gateway bootstrap: ${r.message} (healthy=${r.healthy}, runtime=${r.runtime})`)
-    if (r.healthy) {
-      console.log(`Authenticated dashboard → ${r.dashboardUrl}`)
+  Promise.all([ensureGateway(DEFAULT_GATEWAY_MODE), getOpenClawUpdateStatus()]).then(
+    ([gatewayResult, updateStatus]) => {
+      console.log(
+        `Gateway bootstrap: ${gatewayResult.message} (healthy=${gatewayResult.healthy}, runtime=${gatewayResult.runtime})`
+      )
+      if (gatewayResult.healthy) {
+        console.log(`Authenticated dashboard → ${gatewayResult.dashboardUrl}`)
+      }
+      if (updateStatus.updateAvailable && updateStatus.latestVersion) {
+        console.log(
+          `OpenClaw update available: ${updateStatus.currentVersion} → ${updateStatus.latestVersion} (POST /api/openclaw/update)`
+        )
+      } else if (updateStatus.currentVersion) {
+        console.log(`OpenClaw CLI up to date (${updateStatus.currentVersion})`)
+      }
     }
-  })
+  )
 }
 
 try {

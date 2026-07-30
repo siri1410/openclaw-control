@@ -4,6 +4,7 @@ Production-grade local dashboard for [OpenClaw](https://openclaw.ai) — smart g
 
 ## Features
 
+- **OpenClaw update integration** — check status on boot, one-click `openclaw update` from the dashboard
 - **Works out of the box** — auto-syncs gateway token from `~/.openclaw/openclaw.json`, opens authenticated dashboard URL (no manual token paste)
 - **Smart Start (Auto)** — tries native gateway first, falls back to Docker, opens token-authenticated Control UI
 - **Docker orchestration** — opens Docker Desktop on macOS, waits for daemon, pulls image, starts container
@@ -72,6 +73,10 @@ The authenticated URL format is: `http://127.0.0.1:18789/#token=YOUR_TOKEN`
 
 | Method | Path | Description |
 |--------|------|-------------|
+| GET | `/api/openclaw/update-status` | OpenClaw CLI update channel + availability |
+| POST | `/api/openclaw/update` | Run `openclaw update --yes` and restart gateway |
+| POST | `/api/openclaw/repair-update` | Run `openclaw update repair` |
+| POST | `/api/dashboard/copy` | Copy authenticated dashboard URL (CLI + API) |
 | GET | `/api/status` | Full system status (+ `dashboardUrl`) |
 | GET | `/api/dashboard-url` | Token-authenticated Gateway UI URL |
 | POST | `/api/gateway/ensure` | Smart start `{ mode: "auto"\|"native"\|"docker" }` |

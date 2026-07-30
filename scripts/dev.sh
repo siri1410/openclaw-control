@@ -90,12 +90,16 @@ WEB_PID=$!
 sleep 2
 
 DASHBOARD_URL="$(curl -sf "http://127.0.0.1:${API_PORT}/api/dashboard-url" | python3 -c "import sys,json; print(json.load(sys.stdin).get('url',''))" 2>/dev/null || true)"
+UPDATE_NOTE="$(curl -sf "http://127.0.0.1:${API_PORT}/api/openclaw/update-status" | python3 -c "import sys,json; d=json.load(sys.stdin); print(f\"update available: {d.get('latestVersion')}\" if d.get('updateAvailable') else 'OpenClaw up to date')" 2>/dev/null || true)"
 
 echo ""
 echo "  Control UI  → http://localhost:${WEB_PORT}"
 echo "  API         → http://127.0.0.1:${API_PORT}"
 if [[ -n "$DASHBOARD_URL" ]]; then
   echo "  Gateway UI  → ${DASHBOARD_URL}"
+fi
+if [[ -n "$UPDATE_NOTE" ]]; then
+  echo "  OpenClaw    → ${UPDATE_NOTE}"
 fi
 echo ""
 

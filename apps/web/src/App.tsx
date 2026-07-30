@@ -78,19 +78,6 @@ export function App() {
     }
   }
 
-  const copyDashboardUrl = async () => {
-    setBusy('copy-url')
-    try {
-      const url = dashboardUrl || (await api.dashboardUrl()).url
-      await navigator.clipboard.writeText(url)
-      showToast('Authenticated dashboard URL copied')
-    } catch (err) {
-      showToast(err instanceof Error ? err.message : 'Copy failed', true)
-    } finally {
-      setBusy(null)
-    }
-  }
-
   return (
     <div className='app-shell'>
       <header className='hero'>
@@ -287,6 +274,52 @@ export function App() {
         </section>
 
         <section className='card'>
+          <h2>OpenClaw CLI</h2>
+          <div className='stat-row'>
+            <span className='stat-label'>Installed</span>
+            <span className='stat-value'>{status?.version ?? '—'}</span>
+          </div>
+          <div className='stat-row'>
+            <span className='stat-label'>Channel</span>
+            <span className='stat-value'>{status?.update.channel ?? '—'}</span>
+          </div>
+          <div className='stat-row'>
+            <span className='stat-label'>Update</span>
+            <Badge
+              ok={!status?.update.updateAvailable}
+              label={
+                status?.update.updateAvailable
+                  ? `Available (${status.update.latestVersion})`
+                  : 'Up to date'
+              }
+              variant={status?.update.updateAvailable ? 'warn' : undefined}
+            />
+          </div>
+          <div className='actions'>
+            <button
+              type='button'
+              className='btn btn-primary'
+              disabled={!!busy || !status?.update.updateAvailable}
+              onClick={() =>
+                runAction('update', api.updateOpenClaw, 'OpenClaw updated and gateway restarted')
+              }
+            >
+              {busy === 'update' ? 'Updating…' : 'Update OpenClaw'}
+            </button>
+            <button
+              type='button'
+              className='btn btn-ghost'
+              disabled={!!busy}
+              onClick={() =>
+                runAction('repair-update', api.repairOpenClawUpdate, 'Update repair complete')
+              }
+            >
+              Repair Update
+            </button>
+          </div>
+        </section>
+
+        <section className='card'>
           <h2>Gateway Token</h2>
           <div className='stat-row'>
             <span className='stat-label'>Token</span>
@@ -313,9 +346,20 @@ export function App() {
               type='button'
               className='btn btn-ghost'
               disabled={!!busy}
-              onClick={() => copyDashboardUrl()}
+              onClick={async () => {
+                setBusy('copy-cli')
+                try {
+                  const result = await api.copyDashboardUrl()
+                  await navigator.clipboard.writeText(result.url)
+                  showToast(result.cli || 'Authenticated URL copied')
+                } catch (err) {
+                  showToast(err instanceof Error ? err.message : 'Copy failed', true)
+                } finally {
+                  setBusy(null)
+                }
+              }}
             >
-              {busy === 'copy-url' ? 'Copying…' : 'Copy Auth URL'}
+              {busy === 'copy-cli' ? 'Copying…' : 'Copy via CLI'}
             </button>
             <button
               type='button'

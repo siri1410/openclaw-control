@@ -1,5 +1,6 @@
 {
   "name": "openclaw-control",
+  "version": "1.2.0",
   "private": true,
   "workspaces": [
     "apps/*"

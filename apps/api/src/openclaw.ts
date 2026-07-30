@@ -103,6 +103,70 @@ export async function openclawVersion(): Promise<string | null> {
   return result.stdout.split('\n')[0]?.trim() || null
 }
 
+export type OpenClawUpdateStatus = {
+  currentVersion: string | null
+  latestVersion: string | null
+  updateAvailable: boolean
+  channel: string | null
+  installKind: string | null
+  raw?: unknown
+}
+
+export async function getOpenClawUpdateStatus(): Promise<OpenClawUpdateStatus> {
+  const result = await runOpenclaw(['update', 'status', '--json'], 30_000)
+  const currentVersion = (await openclawVersion()) || null
+
+  if (!result.ok) {
+    return {
+      currentVersion,
+      latestVersion: null,
+      updateAvailable: false,
+      channel: null,
+      installKind: null,
+    }
+  }
+
+  try {
+    const data = JSON.parse(result.stdout) as {
+      update?: { installKind?: string; registry?: { latestVersion?: string } }
+      channel?: { label?: string; value?: string }
+      availability?: { available?: boolean; latestVersion?: string | null }
+    }
+    const latestVersion =
+      data.availability?.latestVersion || data.update?.registry?.latestVersion || null
+    return {
+      currentVersion,
+      latestVersion,
+      updateAvailable: Boolean(data.availability?.available),
+      channel: data.channel?.label || data.channel?.value || null,
+      installKind: data.update?.installKind || null,
+      raw: data,
+    }
+  } catch {
+    return {
+      currentVersion,
+      latestVersion: null,
+      updateAvailable: false,
+      channel: null,
+      installKind: null,
+    }
+  }
+}
+
+export async function updateOpenClaw(options: { restart?: boolean } = {}): Promise<CommandResult> {
+  const args = ['update', '--yes', '--json']
+  if (options.restart === false) args.push('--no-restart')
+  return runOpenclaw(args, 1_800_000)
+}
+
+export async function repairOpenClawUpdate(): Promise<CommandResult> {
+  return runOpenclaw(['update', 'repair'], 120_000)
+}
+
+export async function copyAuthenticatedDashboardUrl(): Promise<CommandResult> {
+  return runOpenclaw(['dashboard', '--no-open'], 15_000)
+}
+
 export function composeFileExists(): boolean {
   return existsSync(DOCKER_COMPOSE)
 }
