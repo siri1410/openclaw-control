@@ -1,9 +1,11 @@
+import { buildDashboardUrl } from './config'
 import {
   ensureDockerDaemon,
   getDockerStatus,
   startDockerGateway,
   stopDockerGateway,
 } from './docker'
+import { ensureGatewayToken } from './env'
 import {
   dockerGatewayRunning,
   gatewayHealth,
