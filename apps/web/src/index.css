@@ -298,7 +298,15 @@ button:disabled {
 }
 
 .link-btn {
-  color: var(--teal);
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 0;
+}
+color: var(--teal);
   text-decoration: none;
   font-weight: 600;
 }

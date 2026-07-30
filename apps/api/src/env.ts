@@ -54,6 +54,20 @@ export function resolveGatewayToken(): string | null {
   return readConfigToken()
 }
 
+/** Ensure a gateway token exists and is synced across .env + openclaw.json. */
+export function ensureGatewayToken(): string {
+  const existing = resolveGatewayToken()
+  if (existing) {
+    persistGatewayToken(existing)
+    process.env.OPENCLAW_GATEWAY_TOKEN = existing
+    return existing
+  }
+  const token = generateToken()
+  persistGatewayToken(token)
+  process.env.OPENCLAW_GATEWAY_TOKEN = token
+  return token
+}
+
 export function generateToken(): string {
   return randomBytes(24).toString('hex')
 }

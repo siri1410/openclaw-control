@@ -3,6 +3,7 @@ import { cors } from 'hono/cors'
 import {
   API_PORT,
   BOOTSTRAP_GATEWAY,
+  buildDashboardUrl,
   DEFAULT_GATEWAY_MODE,
   DOCKER_COMPOSE,
   ENV_FILE,
@@ -12,6 +13,7 @@ import {
 } from './config'
 import { getDockerLogs, getDockerStatus, stopDockerGateway } from './docker'
 import {
+  ensureGatewayToken,
   generateToken,
   keyStatus,
   maskToken,
@@ -60,7 +62,7 @@ app.get('/api/status', async (c) => {
     detectRuntime(),
   ])
 
-  const token = resolveGatewayToken()
+  const token = ensureGatewayToken()
 
   return c.json({
     openclawHome: OPENCLAW_HOME,
@@ -75,8 +77,10 @@ app.get('/api/status', async (c) => {
       ...health,
       dockerRunning: docker.gatewayContainer,
       statusText: await getGatewayStatus(),
+      dashboardUrl: buildDashboardUrl(token),
     },
-    token: token ? { masked: maskToken(token), length: token.length } : null,
+    dashboardUrl: buildDashboardUrl(token),
+    token: { masked: maskToken(token), length: token.length },
     primaryModel: readPrimaryModel(),
     keys: keyStatus(),
     ollamaModels,
@@ -128,6 +132,12 @@ app.post('/api/models/set', async (c) => {
   }
 
   return c.json({ ok: true, modelId, output: result.stdout })
+})
+
+app.get('/api/dashboard-url', (c) => {
+  const token = ensureGatewayToken()
+  const url = buildDashboardUrl(token)
+  return c.json({ url, token: maskToken(token), gatewayPort: GATEWAY_PORT })
 })
 
 app.get('/api/token', (c) => {
@@ -216,15 +226,31 @@ app.post('/api/gateway/stop-all', async (c) => {
 
 const port = API_PORT
 
-console.log(`OpenClaw Control API v1.1 → http://127.0.0.1:${port}`)
+console.log(`OpenClaw Control API v1.2 → http://127.0.0.1:${port}`)
+
+ensureGatewayToken()
 
 if (BOOTSTRAP_GATEWAY) {
   console.log(`Bootstrapping gateway (mode=${DEFAULT_GATEWAY_MODE})…`)
   ensureGateway(DEFAULT_GATEWAY_MODE).then((r) => {
     console.log(`Gateway bootstrap: ${r.message} (healthy=${r.healthy}, runtime=${r.runtime})`)
+    if (r.healthy) {
+      console.log(`Authenticated dashboard → ${r.dashboardUrl}`)
+    }
   })
 }
 
-Bun.serve({ fetch: app.fetch, port })
+try {
+  Bun.serve({ fetch: app.fetch, port })
+} catch (err) {
+  const code = err && typeof err === 'object' && 'code' in err ? String(err.code) : ''
+  if (code === 'EADDRINUSE') {
+    console.error(
+      `Port ${port} already in use. Stop the other API instance:\n  lsof -ti :${port} | xargs kill\nOr use the running API at http://127.0.0.1:${port}`
+    )
+    process.exit(1)
+  }
+  throw err
+}
 
 export { app }

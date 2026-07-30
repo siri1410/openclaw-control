@@ -4,7 +4,6 @@ import {
   startDockerGateway,
   stopDockerGateway,
 } from './docker'
-import { generateToken, persistGatewayToken, resolveGatewayToken } from './env'
 import {
   dockerGatewayRunning,
   gatewayHealth,
@@ -23,6 +22,7 @@ export type EnsureGatewayResult = {
   runtime: GatewayRuntime
   healthy: boolean
   url: string
+  dashboardUrl: string
   message: string
   error?: string
 }
@@ -35,6 +35,9 @@ export async function detectRuntime(): Promise<GatewayRuntime> {
 }
 
 export async function ensureGateway(mode: GatewayMode = 'auto'): Promise<EnsureGatewayResult> {
+  const token = ensureGatewayToken()
+  const dashboardUrl = buildDashboardUrl(token)
+
   const health = await gatewayHealth()
   if (health.healthy) {
     const runtime = await detectRuntime()
@@ -44,12 +47,10 @@ export async function ensureGateway(mode: GatewayMode = 'auto'): Promise<EnsureG
       runtime,
       healthy: true,
       url: health.url,
+      dashboardUrl,
       message: `Gateway already healthy (${runtime})`,
     }
   }
-
-  const token = resolveGatewayToken() || generateToken()
-  persistGatewayToken(token)
 
   if (mode === 'docker') {
     return startDocker(mode, token)
@@ -68,12 +69,14 @@ export async function ensureGateway(mode: GatewayMode = 'auto'): Promise<EnsureG
 async function startNative(mode: GatewayMode): Promise<EnsureGatewayResult> {
   const result = await startNativeGateway()
   const health = await waitHealth(45_000)
+  const token = ensureGatewayToken()
   return {
     ok: result.ok || health,
     mode,
     runtime: health ? 'native' : 'none',
     healthy: health,
     url: `http://127.0.0.1:${process.env.OPENCLAW_GATEWAY_PORT || 18789}/`,
+    dashboardUrl: buildDashboardUrl(token),
     message: health ? 'Native gateway started' : 'Native gateway start attempted',
     error: result.ok ? undefined : result.stderr || undefined,
   }
@@ -86,12 +89,14 @@ async function startDocker(
 ): Promise<EnsureGatewayResult> {
   const daemon = await ensureDockerDaemon({ openApp: true })
   if (!daemon.ok) {
+    const failToken = ensureGatewayToken()
     return {
       ok: false,
       mode,
       runtime: 'none',
       healthy: false,
       url: `http://127.0.0.1:${process.env.OPENCLAW_GATEWAY_PORT || 18789}/`,
+      dashboardUrl: buildDashboardUrl(failToken),
       message: 'Docker unavailable',
       error: daemon.stderr,
     }
@@ -104,6 +109,7 @@ async function startDocker(
     runtime: result.health ? 'docker' : 'none',
     healthy: Boolean(result.health),
     url: `http://127.0.0.1:${process.env.OPENCLAW_GATEWAY_PORT || 18789}/`,
+    dashboardUrl: buildDashboardUrl(token),
     message: result.health
       ? fallbackReason
         ? `Docker gateway started (fallback: ${fallbackReason})`

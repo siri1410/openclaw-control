@@ -18,6 +18,14 @@ export const API_PORT = Number(process.env.API_PORT || 8787)
 
 export const GATEWAY_PORT = Number(process.env.OPENCLAW_GATEWAY_PORT || 18789)
 
+export const GATEWAY_BASE_URL = `http://127.0.0.1:${GATEWAY_PORT}/`
+
+/** Token-authenticated Control UI URL (avoids manual WebSocket token entry). */
+export function buildDashboardUrl(token?: string | null): string {
+  if (!token?.trim()) return GATEWAY_BASE_URL
+  return `${GATEWAY_BASE_URL}#token=${encodeURIComponent(token.trim())}`
+}
+
 export const DEFAULT_GATEWAY_MODE = (process.env.OPENCLAW_GATEWAY_MODE || 'auto') as
   | 'auto'
   | 'native'

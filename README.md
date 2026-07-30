@@ -4,10 +4,12 @@ Production-grade local dashboard for [OpenClaw](https://openclaw.ai) — smart g
 
 ## Features
 
-- **Smart Start (Auto)** — tries native gateway first, falls back to Docker
+- **Works out of the box** — auto-syncs gateway token from `~/.openclaw/openclaw.json`, opens authenticated dashboard URL (no manual token paste)
+- **Smart Start (Auto)** — tries native gateway first, falls back to Docker, opens token-authenticated Control UI
 - **Docker orchestration** — opens Docker Desktop on macOS, waits for daemon, pulls image, starts container
 - **Health polling** — waits up to 90s for `/healthz` before reporting success
 - **Bootstrap on launch** — `OPENCLAW_BOOTSTRAP_GATEWAY=1` starts gateway when API boots
+- **Port-safe dev** — reuses a healthy API on `:8787` instead of crashing with `EADDRINUSE`
 - **Node 24.15+ path** — auto-resolves fnm OpenClaw binary for compatible CLI version
 
 ## Stack
@@ -33,11 +35,27 @@ cd openclaw-control
 bun install
 cp .env.example .env
 
-# One command — API + web + auto gateway bootstrap
+# One command — API + web + auto gateway bootstrap + authenticated dashboard
 bun run dev
 ```
 
-Open **http://localhost:5173** → click **Smart Start (Auto)**.
+This will:
+
+1. Sync/generate your gateway token in `~/.openclaw/.env` + `openclaw.json`
+2. Bootstrap the gateway if it is down
+3. Open **http://localhost:5173** (Control dashboard)
+4. Open **http://127.0.0.1:18789/#token=…** (native Gateway UI, pre-authenticated)
+
+Set `OPENCLAW_AUTO_OPEN=0` to skip browser auto-open.
+
+### Gateway connection troubleshooting
+
+If the native Control UI shows **"Could not connect"**, you opened the bare URL without a token. Use either:
+
+- **Copy Auth URL** in the Control dashboard, or
+- Run `openclaw dashboard --no-open` and paste the clipboard URL
+
+The authenticated URL format is: `http://127.0.0.1:18789/#token=YOUR_TOKEN`
 
 ## Environment
 
@@ -47,13 +65,15 @@ Open **http://localhost:5173** → click **Smart Start (Auto)**.
 | `OPENCLAW_HOME` | `~/.openclaw` | OpenClaw state directory |
 | `OPENCLAW_GATEWAY_MODE` | `auto` | `auto` \| `native` \| `docker` |
 | `OPENCLAW_BOOTSTRAP_GATEWAY` | `1` in dev script | Start gateway on API boot |
+| `OPENCLAW_AUTO_OPEN` | `1` in dev script | Open Control + Gateway UI in browser |
 | `OPENCLAW_IMAGE` | `ghcr.io/openclaw/openclaw:latest` | Docker image |
 
 ## API endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/status` | Full system status |
+| GET | `/api/status` | Full system status (+ `dashboardUrl`) |
+| GET | `/api/dashboard-url` | Token-authenticated Gateway UI URL |
 | POST | `/api/gateway/ensure` | Smart start `{ mode: "auto"\|"native"\|"docker" }` |
 | POST | `/api/gateway/repair` | `openclaw doctor --repair` + auto restart |
 | POST | `/api/gateway/docker/start` | Docker only (opens Docker Desktop) |

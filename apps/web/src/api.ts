@@ -21,10 +21,12 @@ export type StatusResponse = {
   gateway: {
     healthy: boolean
     url: string
+    dashboardUrl?: string
     dockerRunning: boolean
     statusText: string
   }
-  token: { masked: string; length: number } | null
+  dashboardUrl: string
+  token: { masked: string; length: number }
   primaryModel: string | null
   keys: Array<{ env: string; label: string; set: boolean }>
   ollamaModels: string[]
@@ -37,6 +39,7 @@ export type EnsureGatewayResponse = {
   runtime: GatewayRuntime
   healthy: boolean
   url: string
+  dashboardUrl: string
   message: string
   error?: string
 }
@@ -64,6 +67,7 @@ export const api = {
       body: JSON.stringify({ action: 'generate' }),
     }),
   revealToken: () => request<{ token: string }>('/api/token/reveal', { method: 'POST' }),
+  dashboardUrl: () => request<{ url: string }>('/api/dashboard-url'),
   ensureGateway: (mode: 'auto' | 'native' | 'docker' = 'auto') =>
     request<EnsureGatewayResponse>('/api/gateway/ensure', {
       method: 'POST',

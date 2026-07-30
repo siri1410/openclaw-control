@@ -67,6 +67,29 @@ export function App() {
 
   const gatewayHealthy = status?.gateway.healthy ?? false
   const runtime = status?.runtime ?? 'none'
+  const dashboardUrl = status?.dashboardUrl ?? status?.gateway.dashboardUrl
+
+  const openDashboard = async () => {
+    try {
+      const url = dashboardUrl || (await api.dashboardUrl()).url
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to open dashboard', true)
+    }
+  }
+
+  const copyDashboardUrl = async () => {
+    setBusy('copy-url')
+    try {
+      const url = dashboardUrl || (await api.dashboardUrl()).url
+      await navigator.clipboard.writeText(url)
+      showToast('Authenticated dashboard URL copied')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Copy failed', true)
+    } finally {
+      setBusy(null)
+    }
+  }
 
   return (
     <div className='app-shell'>
@@ -89,10 +112,10 @@ export function App() {
           >
             Refresh
           </button>
-          {status?.gateway.url && (
-            <a className='link-btn' href={status.gateway.url} target='_blank' rel='noreferrer'>
-              Gateway UI ↗
-            </a>
+          {dashboardUrl && (
+            <button type='button' className='link-btn btn-linkish' onClick={() => openDashboard()}>
+              Open Gateway ↗
+            </button>
           )}
         </div>
       </header>
@@ -123,11 +146,31 @@ export function App() {
             className='btn btn-primary btn-lg'
             disabled={!!busy}
             onClick={() =>
-              runAction('ensure', () => api.ensureGateway('auto'), 'Gateway orchestration complete')
+              runAction(
+                'ensure',
+                async () => {
+                  const result = await api.ensureGateway('auto')
+                  if (result.healthy && result.dashboardUrl) {
+                    window.open(result.dashboardUrl, '_blank', 'noopener,noreferrer')
+                  }
+                  return result
+                },
+                'Gateway orchestration complete'
+              )
             }
           >
             {busy === 'ensure' ? 'Starting…' : 'Smart Start (Auto)'}
           </button>
+          {gatewayHealthy && dashboardUrl && (
+            <button
+              type='button'
+              className='btn btn-secondary btn-lg'
+              disabled={!!busy}
+              onClick={() => openDashboard()}
+            >
+              Open Gateway
+            </button>
+          )}
           <button
             type='button'
             className='btn btn-secondary'
@@ -252,11 +295,27 @@ export function App() {
           <div className='actions'>
             <button
               type='button'
+              className='btn btn-primary'
+              disabled={!!busy || !dashboardUrl}
+              onClick={() => openDashboard()}
+            >
+              Open Dashboard
+            </button>
+            <button
+              type='button'
               className='btn btn-secondary'
               disabled={!!busy}
               onClick={() => runAction('token', api.generateToken, 'Token generated')}
             >
               Generate
+            </button>
+            <button
+              type='button'
+              className='btn btn-ghost'
+              disabled={!!busy}
+              onClick={() => copyDashboardUrl()}
+            >
+              {busy === 'copy-url' ? 'Copying…' : 'Copy Auth URL'}
             </button>
             <button
               type='button'
@@ -275,7 +334,7 @@ export function App() {
                 }
               }}
             >
-              Copy
+              Copy Token
             </button>
           </div>
         </section>
